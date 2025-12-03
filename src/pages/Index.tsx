@@ -1,14 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 import InteractiveBackground from "@/components/InteractiveBackground";
 import GeneratingAnimation from "@/components/GeneratingAnimation";
 import FavoritesPanel from "@/components/FavoritesPanel";
 import MusicControl from "@/components/MusicControl";
 import AdBanner from "@/components/AdBanner";
+import ComparisonSlider from "@/components/ComparisonSlider";
+import SocialShare from "@/components/SocialShare";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { useFavorites } from "@/hooks/useFavorites";
 import {
@@ -23,14 +26,20 @@ import {
   RefreshCw,
   User,
   Wand2,
+  Zap,
+  Star,
+  Eye,
 } from "lucide-react";
 
 const FRAME_STYLES = [
-  { id: "romantic", label: "Romantic", emoji: "💕" },
-  { id: "cinematic", label: "Cinematic", emoji: "🎬" },
-  { id: "anime", label: "Anime", emoji: "🎨" },
-  { id: "vintage", label: "Vintage", emoji: "📷" },
-  { id: "fantasy", label: "Fantasy", emoji: "✨" },
+  { id: "romantic", label: "Romantic", emoji: "💕", color: "from-pink-500 to-rose-500" },
+  { id: "cinematic", label: "Cinematic", emoji: "🎬", color: "from-amber-500 to-orange-500" },
+  { id: "anime", label: "Anime", emoji: "🎨", color: "from-purple-500 to-pink-500" },
+  { id: "vintage", label: "Vintage", emoji: "📷", color: "from-amber-600 to-yellow-500" },
+  { id: "fantasy", label: "Fantasy", emoji: "✨", color: "from-violet-500 to-purple-500" },
+  { id: "watercolor", label: "Watercolor", emoji: "🎭", color: "from-cyan-500 to-blue-500" },
+  { id: "popart", label: "Pop Art", emoji: "🔴", color: "from-red-500 to-yellow-500" },
+  { id: "cyberpunk", label: "Cyberpunk", emoji: "🌃", color: "from-cyan-400 to-fuchsia-500" },
 ];
 
 const Index = () => {
@@ -43,12 +52,12 @@ const Index = () => {
   const [currentGeneratingFrame, setCurrentGeneratingFrame] = useState(0);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
+  const [selectedComparison, setSelectedComparison] = useState<number | null>(null);
   const navigate = useNavigate();
 
   const { playSound } = useSoundEffects();
   const { addToFavorites, isFavorite, favoritesCount } = useFavorites();
 
-  // Calculate progress percentage
   const getProgress = () => {
     if (isGenerating) return 95;
     if (generatedImages.length > 0) return 100;
@@ -105,42 +114,38 @@ const Index = () => {
       for (let i = 0; i < frameCount; i++) {
         setCurrentGeneratingFrame(i);
 
-        const prompt = `Create a ${frameStyle} style portrait photo combining these two people in a charming, cinematic moment. Frame ${i + 1} of ${frameCount}. Style: ${FRAME_STYLES.find(s => s.id === frameStyle)?.label}. Make it look natural and beautiful.`;
-
-        const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
+        const response = await supabase.functions.invoke('generate-snaps', {
+          body: {
+            portrait1,
+            portrait2,
+            frameStyle,
+            frameIndex: i,
+            totalFrames: frameCount,
           },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image-preview",
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: prompt },
-                  { type: "image_url", image_url: { url: portrait1 } },
-                  { type: "image_url", image_url: { url: portrait2 } },
-                ],
-              },
-            ],
-            modalities: ["image", "text"],
-          }),
         });
 
-        const data = await response.json();
-        const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+        if (response.error) {
+          console.error('Generation error:', response.error);
+          toast.error(`Frame ${i + 1} failed: ${response.error.message}`);
+          continue;
+        }
 
-        if (imageUrl) {
-          newImages.push(imageUrl);
+        if (response.data?.imageUrl) {
+          newImages.push(response.data.imageUrl);
         }
       }
 
       setGeneratedImages(newImages);
-      playSound("complete");
-      toast.success(`Generated ${newImages.length} amazing snaps!`);
+      
+      if (newImages.length > 0) {
+        playSound("complete");
+        toast.success(`Generated ${newImages.length} amazing snaps!`);
+      } else {
+        playSound("error");
+        toast.error("Generation failed. Please try again.");
+      }
     } catch (error: any) {
+      console.error('Generation error:', error);
       playSound("error");
       toast.error("Generation failed. Please try again.");
     } finally {
@@ -174,6 +179,7 @@ const Index = () => {
     setPortrait1(null);
     setPortrait2(null);
     setGeneratedImages([]);
+    setSelectedComparison(null);
     toast.success("Workspace reset!");
   };
 
@@ -186,52 +192,72 @@ const Index = () => {
     <div className="min-h-screen bg-background relative overflow-hidden">
       <InteractiveBackground />
       
-      {isGenerating && (
-        <GeneratingAnimation frameCount={frameCount} currentFrame={currentGeneratingFrame} />
-      )}
+      <AnimatePresence>
+        {isGenerating && (
+          <GeneratingAnimation frameCount={frameCount} currentFrame={currentGeneratingFrame} />
+        )}
+      </AnimatePresence>
 
       <FavoritesPanel isOpen={showFavorites} onClose={() => setShowFavorites(false)} />
       <MusicControl />
 
-      <div className="relative z-10 min-h-screen">
+      <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header */}
-        <header className="glass border-b border-border/50 sticky top-0 z-30">
+        <motion.header 
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="glass border-b border-border/50 sticky top-0 z-30"
+        >
           <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-primary to-accent flex items-center justify-center animate-glow-pulse">
-                <Camera className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <motion.div 
+                className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center animate-glow-pulse"
+                whileHover={{ scale: 1.1, rotate: 5 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Camera className="w-6 h-6 text-primary-foreground" />
+              </motion.div>
               <div>
-                <h1 className="text-xl font-bold gradient-text">Selfie2Snap</h1>
-                <p className="text-xs text-muted-foreground">AI Portrait Generator</p>
+                <h1 className="text-2xl font-bold gradient-text">Selfie2Snap</h1>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-accent" />
+                  AI Portrait Magic
+                </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Progress indicator */}
-              <div className="hidden md:flex items-center gap-2 mr-4">
+              <div className="hidden md:flex items-center gap-2 mr-4 glass px-3 py-2 rounded-full">
                 <div className="w-24 h-2 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
-                    style={{ width: `${getProgress()}%` }}
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-primary to-accent"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${getProgress()}%` }}
+                    transition={{ duration: 0.5 }}
                   />
                 </div>
-                <span className="text-xs text-muted-foreground">{getProgress()}%</span>
+                <span className="text-xs font-medium text-primary">{getProgress()}%</span>
               </div>
 
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowFavorites(true)}
-                className="relative"
-              >
-                <Heart className={`w-4 h-4 ${favoritesCount > 0 ? "text-primary fill-primary" : ""}`} />
-                {favoritesCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
-                    {favoritesCount}
-                  </span>
-                )}
-              </Button>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowFavorites(true)}
+                  className="relative"
+                >
+                  <Heart className={`w-4 h-4 ${favoritesCount > 0 ? "text-primary fill-primary" : ""}`} />
+                  {favoritesCount > 0 && (
+                    <motion.span 
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-primary to-accent text-primary-foreground text-xs rounded-full flex items-center justify-center font-bold"
+                    >
+                      {favoritesCount}
+                    </motion.span>
+                  )}
+                </Button>
+              </motion.div>
 
               <Link to="/history">
                 <Button variant="ghost" size="sm">
@@ -245,26 +271,43 @@ const Index = () => {
                 </Button>
               ) : (
                 <Link to="/auth">
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" className="gap-2">
                     <LogIn className="w-4 h-4" />
+                    <span className="hidden sm:inline">Sign In</span>
                   </Button>
                 </Link>
               )}
             </div>
           </div>
-        </header>
+        </motion.header>
 
         {/* Main content */}
-        <main className="max-w-6xl mx-auto px-4 py-8">
+        <main className="flex-1 max-w-6xl mx-auto px-4 py-8 w-full">
           {/* Hero section */}
-          <div className="text-center mb-12 animate-fade-in">
-            <h2 className="text-4xl md:text-5xl font-bold mb-4">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-12"
+          >
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.2, type: "spring" }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass mb-4"
+            >
+              <Star className="w-4 h-4 text-accent animate-pulse" />
+              <span className="text-sm font-medium">AI-Powered Portrait Generation</span>
+              <Star className="w-4 h-4 text-accent animate-pulse" />
+            </motion.div>
+            
+            <h2 className="text-4xl md:text-6xl font-bold mb-4">
               Transform Your <span className="gradient-text">Selfies</span>
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Upload two portraits and watch AI magic create stunning cinematic moments
             </p>
-          </div>
+          </motion.div>
 
           {/* Ad banner */}
           <div className="mb-8">
@@ -272,37 +315,51 @@ const Index = () => {
           </div>
 
           {/* Upload section */}
-          <div className="grid md:grid-cols-2 gap-6 mb-8">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="grid md:grid-cols-2 gap-6 mb-8"
+          >
             {/* Portrait 1 */}
             <div className="space-y-3">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <User className="w-4 h-4 text-primary" />
                 First Portrait
               </label>
-              <label className="group cursor-pointer">
-                <div className={`aspect-square rounded-2xl border-2 border-dashed transition-all duration-300 flex items-center justify-center overflow-hidden ${
-                  portrait1 
-                    ? "border-primary bg-primary/5" 
-                    : "border-border hover:border-primary/50 hover:bg-primary/5"
-                }`}>
+              <label className="group cursor-pointer block">
+                <motion.div 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`aspect-square rounded-2xl border-2 border-dashed transition-all duration-300 flex items-center justify-center overflow-hidden ${
+                    portrait1 
+                      ? "border-primary bg-primary/5" 
+                      : "border-border hover:border-primary/50 hover:bg-primary/5"
+                  }`}
+                >
                   {portrait1 ? (
                     <div className="relative w-full h-full group">
                       <img
                         src={portrait1}
                         alt="Portrait 1"
-                        className="w-full h-full object-cover transition-all duration-300 group-hover:blur-sm group-hover:scale-105"
+                        className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
                       />
-                      <div className="absolute inset-0 bg-background/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <p className="text-sm font-medium">Click to change</p>
+                      <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4">
+                        <span className="text-sm font-medium glass px-3 py-1 rounded-full">Click to change</span>
                       </div>
                     </div>
                   ) : (
                     <div className="text-center p-8">
-                      <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-3 group-hover:text-primary transition-colors" />
+                      <motion.div
+                        animate={{ y: [0, -5, 0] }}
+                        transition={{ repeat: Infinity, duration: 2 }}
+                      >
+                        <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-3 group-hover:text-primary transition-colors" />
+                      </motion.div>
                       <p className="text-sm text-muted-foreground">Drop or click to upload</p>
                     </div>
                   )}
-                </div>
+                </motion.div>
                 <input
                   type="file"
                   accept="image/*"
@@ -318,30 +375,39 @@ const Index = () => {
                 <User className="w-4 h-4 text-accent" />
                 Second Portrait
               </label>
-              <label className="group cursor-pointer">
-                <div className={`aspect-square rounded-2xl border-2 border-dashed transition-all duration-300 flex items-center justify-center overflow-hidden ${
-                  portrait2 
-                    ? "border-accent bg-accent/5" 
-                    : "border-border hover:border-accent/50 hover:bg-accent/5"
-                }`}>
+              <label className="group cursor-pointer block">
+                <motion.div 
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`aspect-square rounded-2xl border-2 border-dashed transition-all duration-300 flex items-center justify-center overflow-hidden ${
+                    portrait2 
+                      ? "border-accent bg-accent/5" 
+                      : "border-border hover:border-accent/50 hover:bg-accent/5"
+                  }`}
+                >
                   {portrait2 ? (
                     <div className="relative w-full h-full group">
                       <img
                         src={portrait2}
                         alt="Portrait 2"
-                        className="w-full h-full object-cover transition-all duration-300 group-hover:blur-sm group-hover:scale-105"
+                        className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
                       />
-                      <div className="absolute inset-0 bg-background/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <p className="text-sm font-medium">Click to change</p>
+                      <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4">
+                        <span className="text-sm font-medium glass px-3 py-1 rounded-full">Click to change</span>
                       </div>
                     </div>
                   ) : (
                     <div className="text-center p-8">
-                      <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-3 group-hover:text-accent transition-colors" />
+                      <motion.div
+                        animate={{ y: [0, -5, 0] }}
+                        transition={{ repeat: Infinity, duration: 2, delay: 0.5 }}
+                      >
+                        <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-3 group-hover:text-accent transition-colors" />
+                      </motion.div>
                       <p className="text-sm text-muted-foreground">Drop or click to upload</p>
                     </div>
                   )}
-                </div>
+                </motion.div>
                 <input
                   type="file"
                   accept="image/*"
@@ -350,38 +416,49 @@ const Index = () => {
                 />
               </label>
             </div>
-          </div>
+          </motion.div>
 
           {/* Controls */}
-          <div className="glass rounded-2xl p-6 mb-8 space-y-6 animate-fade-in">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="glass rounded-3xl p-6 mb-8 space-y-6"
+          >
             {/* Frame style */}
             <div className="space-y-3">
-              <label className="text-sm font-medium">Frame Style</label>
-              <div className="flex flex-wrap gap-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-accent" />
+                Frame Style
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {FRAME_STYLES.map((style) => (
-                  <button
+                  <motion.button
                     key={style.id}
                     onClick={() => {
                       playSound("click");
                       setFrameStyle(style.id);
                     }}
-                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={`px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
                       frameStyle === style.id
-                        ? "bg-gradient-to-r from-primary to-accent text-primary-foreground scale-105"
+                        ? `bg-gradient-to-r ${style.color} text-white shadow-lg`
                         : "bg-secondary hover:bg-secondary/80"
                     }`}
                   >
-                    {style.emoji} {style.label}
-                  </button>
+                    <span>{style.emoji}</span>
+                    <span>{style.label}</span>
+                  </motion.button>
                 ))}
               </div>
             </div>
 
-            {/* Frame count - max 4 */}
+            {/* Frame count */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">Number of Frames</label>
-                <span className="text-sm text-primary font-bold">{frameCount}</span>
+                <span className="text-sm text-primary font-bold glass px-3 py-1 rounded-full">{frameCount}</span>
               </div>
               <Slider
                 value={[frameCount]}
@@ -394,71 +471,124 @@ const Index = () => {
 
             {/* Actions */}
             <div className="flex flex-wrap gap-3">
-              <Button
-                variant="premium"
-                size="xl"
-                onClick={handleGenerate}
-                disabled={!portrait1 || !portrait2 || isGenerating}
-                className="flex-1 min-w-[200px]"
-              >
-                <Wand2 className="mr-2" />
-                Generate Snaps
-              </Button>
-              <Button
-                variant="outline"
-                size="xl"
-                onClick={handleReset}
-                disabled={isGenerating}
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
+              <motion.div className="flex-1 min-w-[200px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Button
+                  variant="premium"
+                  size="xl"
+                  onClick={handleGenerate}
+                  disabled={!portrait1 || !portrait2 || isGenerating}
+                  className="w-full"
+                >
+                  <Wand2 className="mr-2" />
+                  Generate Snaps
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  variant="outline"
+                  size="xl"
+                  onClick={handleReset}
+                  disabled={isGenerating}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+              </motion.div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Generated images */}
-          {generatedImages.length > 0 && (
-            <div className="space-y-4 animate-fade-in">
-              <h3 className="text-xl font-bold flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-primary" />
-                Your Generated Snaps
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {generatedImages.map((image, index) => (
-                  <div
-                    key={index}
-                    className="group relative rounded-xl overflow-hidden glass animate-scale-in"
-                    style={{ animationDelay: `${index * 0.1}s` }}
+          <AnimatePresence>
+            {generatedImages.length > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-6"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                    Your Generated Snaps
+                  </h3>
+                </div>
+
+                {/* Comparison slider */}
+                {selectedComparison !== null && portrait1 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="max-w-lg mx-auto mb-6"
                   >
-                    <div className="aspect-square">
-                      <img
-                        src={image}
-                        alt={`Generated snap ${index + 1}`}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                      />
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center gap-2 p-3">
+                    <ComparisonSlider
+                      beforeImage={portrait1}
+                      afterImage={generatedImages[selectedComparison]}
+                      beforeLabel="Original"
+                      afterLabel="Generated"
+                    />
+                    <div className="flex justify-center mt-3">
                       <Button
+                        variant="ghost"
                         size="sm"
-                        variant="secondary"
-                        onClick={() => handleDownload(image)}
-                        className="h-9 w-9 p-0"
+                        onClick={() => setSelectedComparison(null)}
                       >
-                        <Download className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={isFavorite(image) ? "default" : "secondary"}
-                        onClick={() => handleAddToFavorites(image)}
-                        className="h-9 w-9 p-0"
-                      >
-                        <Heart className={`w-4 h-4 ${isFavorite(image) ? "fill-current" : ""}`} />
+                        Close Comparison
                       </Button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+                  </motion.div>
+                )}
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {generatedImages.map((image, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="group relative rounded-2xl overflow-hidden glass"
+                    >
+                      <div className="aspect-square">
+                        <img
+                          src={image}
+                          alt={`Generated snap ${index + 1}`}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                        />
+                      </div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-end gap-2 p-3">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setSelectedComparison(index)}
+                            className="h-9 w-9 p-0"
+                            title="Compare"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleDownload(image)}
+                            className="h-9 w-9 p-0"
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={isFavorite(image) ? "default" : "secondary"}
+                            onClick={() => handleAddToFavorites(image)}
+                            className="h-9 w-9 p-0"
+                          >
+                            <Heart className={`w-4 h-4 ${isFavorite(image) ? "fill-current" : ""}`} />
+                          </Button>
+                        </div>
+                        <SocialShare imageUrl={image} title={`Check out my ${frameStyle} AI snap!`} />
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Bottom ad */}
           <div className="mt-12">
@@ -467,7 +597,7 @@ const Index = () => {
         </main>
 
         {/* Footer */}
-        <footer className="glass border-t border-border/50 mt-auto py-6">
+        <footer className="glass border-t border-border/50 py-6 mt-auto">
           <div className="max-w-6xl mx-auto px-4 text-center text-sm text-muted-foreground">
             <p>Created with ❤️ by Nurash Weerasinghe</p>
           </div>
