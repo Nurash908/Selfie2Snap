@@ -12,6 +12,9 @@ import MusicControl from "@/components/MusicControl";
 import AdBanner from "@/components/AdBanner";
 import ComparisonSlider from "@/components/ComparisonSlider";
 import SocialShare from "@/components/SocialShare";
+import ImageLightbox from "@/components/ImageLightbox";
+import ImageFilters from "@/components/ImageFilters";
+import BatchDownload from "@/components/BatchDownload";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { useFavorites } from "@/hooks/useFavorites";
 import {
@@ -29,6 +32,8 @@ import {
   Zap,
   Star,
   Eye,
+  Maximize2,
+  Sliders,
 } from "lucide-react";
 
 const FRAME_STYLES = [
@@ -53,10 +58,12 @@ const Index = () => {
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
   const [selectedComparison, setSelectedComparison] = useState<number | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [editingImage, setEditingImage] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const { playSound } = useSoundEffects();
-  const { addToFavorites, isFavorite, favoritesCount } = useFavorites();
+  const { addToFavorites, isFavorite, favoritesCount, refreshFavorites } = useFavorites();
 
   const getProgress = () => {
     if (isGenerating) return 95;
@@ -108,13 +115,15 @@ const Index = () => {
     setCurrentGeneratingFrame(0);
     setGeneratedImages([]);
 
+    const newImages: string[] = [];
+
     try {
-      const newImages: string[] = [];
-
       for (let i = 0; i < frameCount; i++) {
-        setCurrentGeneratingFrame(i);
+        setCurrentGeneratingFrame(i + 1);
+        
+        console.log(`Generating frame ${i + 1} of ${frameCount}...`);
 
-        const response = await supabase.functions.invoke('generate-snaps', {
+        const { data, error } = await supabase.functions.invoke('generate-snaps', {
           body: {
             portrait1,
             portrait2,
@@ -124,22 +133,40 @@ const Index = () => {
           },
         });
 
-        if (response.error) {
-          console.error('Generation error:', response.error);
-          toast.error(`Frame ${i + 1} failed: ${response.error.message}`);
+        if (error) {
+          console.error('Generation error:', error);
+          toast.error(`Frame ${i + 1} failed: ${error.message}`);
           continue;
         }
 
-        if (response.data?.imageUrl) {
-          newImages.push(response.data.imageUrl);
+        if (data?.imageUrl) {
+          newImages.push(data.imageUrl);
+          // Update state progressively so user sees images appearing
+          setGeneratedImages([...newImages]);
+        } else if (data?.error) {
+          console.error('API error:', data.error);
+          toast.error(data.error);
         }
       }
 
-      setGeneratedImages(newImages);
-      
       if (newImages.length > 0) {
         playSound("complete");
         toast.success(`Generated ${newImages.length} amazing snaps!`);
+        
+        // Auto-save to generated_images if user is logged in
+        if (user) {
+          for (const imageUrl of newImages) {
+            try {
+              await supabase.from("generated_images").insert({
+                image_url: imageUrl,
+                user_id: user.id,
+                prompt: `${frameStyle} style selfie`,
+              });
+            } catch (err) {
+              console.error("Failed to save to history:", err);
+            }
+          }
+        }
       } else {
         playSound("error");
         toast.error("Generation failed. Please try again.");
@@ -162,7 +189,10 @@ const Index = () => {
     }
 
     playSound("favorite");
-    await addToFavorites(imageUrl, `${frameStyle} style selfie`);
+    const success = await addToFavorites(imageUrl, `${frameStyle} style selfie`);
+    if (success) {
+      refreshFavorites();
+    }
   };
 
   const handleDownload = (imageUrl: string) => {
@@ -200,6 +230,32 @@ const Index = () => {
 
       <FavoritesPanel isOpen={showFavorites} onClose={() => setShowFavorites(false)} />
       <MusicControl />
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {lightboxIndex !== null && (
+          <ImageLightbox
+            images={generatedImages}
+            initialIndex={lightboxIndex}
+            isOpen={lightboxIndex !== null}
+            onClose={() => setLightboxIndex(null)}
+            onDownload={handleDownload}
+            onFavorite={handleAddToFavorites}
+            isFavorite={isFavorite}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Image Filters */}
+      <AnimatePresence>
+        {editingImage && (
+          <ImageFilters
+            imageUrl={editingImage}
+            isOpen={!!editingImage}
+            onClose={() => setEditingImage(null)}
+          />
+        )}
+      </AnimatePresence>
 
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* Header */}
@@ -505,11 +561,12 @@ const Index = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-6"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-4">
                   <h3 className="text-xl font-bold flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-primary" />
                     Your Generated Snaps
                   </h3>
+                  <BatchDownload images={generatedImages} />
                 </div>
 
                 {/* Comparison slider */}
@@ -554,7 +611,16 @@ const Index = () => {
                         />
                       </div>
                       <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-end gap-2 p-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap justify-center">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setLightboxIndex(index)}
+                            className="h-9 w-9 p-0"
+                            title="View in Gallery"
+                          >
+                            <Maximize2 className="w-4 h-4" />
+                          </Button>
                           <Button
                             size="sm"
                             variant="secondary"
@@ -567,8 +633,18 @@ const Index = () => {
                           <Button
                             size="sm"
                             variant="secondary"
+                            onClick={() => setEditingImage(image)}
+                            className="h-9 w-9 p-0"
+                            title="Edit Filters"
+                          >
+                            <Sliders className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
                             onClick={() => handleDownload(image)}
                             className="h-9 w-9 p-0"
+                            title="Download"
                           >
                             <Download className="w-4 h-4" />
                           </Button>
@@ -577,6 +653,7 @@ const Index = () => {
                             variant={isFavorite(image) ? "default" : "secondary"}
                             onClick={() => handleAddToFavorites(image)}
                             className="h-9 w-9 p-0"
+                            title="Add to Favorites"
                           >
                             <Heart className={`w-4 h-4 ${isFavorite(image) ? "fill-current" : ""}`} />
                           </Button>
@@ -598,8 +675,17 @@ const Index = () => {
 
         {/* Footer */}
         <footer className="glass border-t border-border/50 py-6 mt-auto">
-          <div className="max-w-6xl mx-auto px-4 text-center text-sm text-muted-foreground">
-            <p>Created with ❤️ by Nurash Weerasinghe</p>
+          <div className="max-w-6xl mx-auto px-4 text-center">
+            <motion.p 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-sm text-muted-foreground"
+            >
+              Created by <span className="font-semibold gradient-text">Nurash Weerasinghe</span>
+            </motion.p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
+              © {new Date().getFullYear()} Selfie2Snap. All rights reserved.
+            </p>
           </div>
         </footer>
       </div>
