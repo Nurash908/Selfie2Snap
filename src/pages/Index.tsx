@@ -15,6 +15,7 @@ import SocialShare from "@/components/SocialShare";
 import ImageLightbox from "@/components/ImageLightbox";
 import ImageFilters from "@/components/ImageFilters";
 import BatchDownload from "@/components/BatchDownload";
+import WatermarkEditor from "@/components/WatermarkEditor";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { useFavorites } from "@/hooks/useFavorites";
 import {
@@ -34,6 +35,7 @@ import {
   Eye,
   Maximize2,
   Sliders,
+  Type,
 } from "lucide-react";
 
 const FRAME_STYLES = [
@@ -60,6 +62,7 @@ const Index = () => {
   const [selectedComparison, setSelectedComparison] = useState<number | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editingImage, setEditingImage] = useState<string | null>(null);
+  const [watermarkImage, setWatermarkImage] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const { playSound } = useSoundEffects();
@@ -253,6 +256,17 @@ const Index = () => {
             imageUrl={editingImage}
             isOpen={!!editingImage}
             onClose={() => setEditingImage(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Watermark Editor */}
+      <AnimatePresence>
+        {watermarkImage && (
+          <WatermarkEditor
+            imageUrl={watermarkImage}
+            isOpen={!!watermarkImage}
+            onClose={() => setWatermarkImage(null)}
           />
         )}
       </AnimatePresence>
@@ -638,6 +652,15 @@ const Index = () => {
                             title="Edit Filters"
                           >
                             <Sliders className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setWatermarkImage(image)}
+                            className="h-9 w-9 p-0"
+                            title="Add Watermark"
+                          >
+                            <Type className="w-4 h-4" />
                           </Button>
                           <Button
                             size="sm"

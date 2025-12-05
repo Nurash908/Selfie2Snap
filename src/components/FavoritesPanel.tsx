@@ -1,11 +1,13 @@
-import { Heart, Download, Trash2, X, Package, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Heart, Download, Trash2, X, Package, Loader2, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
 import JSZip from "jszip";
+import LazyImage from "@/components/LazyImage";
+import WatermarkEditor from "@/components/WatermarkEditor";
 
 interface FavoritesPanelProps {
   isOpen: boolean;
@@ -16,6 +18,7 @@ const FavoritesPanel = ({ isOpen, onClose }: FavoritesPanelProps) => {
   const { favorites, loading, removeFromFavorites } = useFavorites();
   const { playSound } = useSoundEffects();
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [watermarkImage, setWatermarkImage] = useState<string | null>(null);
 
   const handleDownload = (imageUrl: string) => {
     playSound("download");
@@ -79,126 +82,153 @@ const FavoritesPanel = ({ isOpen, onClose }: FavoritesPanelProps) => {
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm"
-            onClick={onClose}
+    <>
+      {/* Watermark Editor */}
+      <AnimatePresence>
+        {watermarkImage && (
+          <WatermarkEditor
+            imageUrl={watermarkImage}
+            isOpen={!!watermarkImage}
+            onClose={() => setWatermarkImage(null)}
           />
+        )}
+      </AnimatePresence>
 
-          {/* Panel */}
-          <motion.div
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed right-0 top-0 h-full w-full max-w-md bg-card border-l border-border shadow-2xl z-50 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div className="flex items-center gap-2">
-                <Heart className="w-5 h-5 text-primary fill-primary" />
-                <h2 className="text-xl font-bold">Favorites</h2>
-                <motion.span 
-                  key={favorites.length}
-                  initial={{ scale: 1.3 }}
-                  animate={{ scale: 1 }}
-                  className="bg-primary/20 text-primary text-xs px-2 py-1 rounded-full font-medium"
-                >
-                  {favorites.length}
-                </motion.span>
-              </div>
-              <div className="flex items-center gap-2">
-                {favorites.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleDownloadAll}
-                    disabled={isDownloadingAll}
-                    className="gap-1"
-                  >
-                    {isDownloadingAll ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Package className="w-4 h-4" />
-                    )}
-                    <span className="hidden sm:inline">All</span>
-                  </Button>
-                )}
-                <Button variant="ghost" size="icon" onClick={onClose}>
-                  <X className="w-5 h-5" />
-                </Button>
-              </div>
-            </div>
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm"
+              onClick={onClose}
+            />
 
-            <div className="h-[calc(100%-64px)] overflow-y-auto p-4">
-              {loading ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : favorites.length === 0 ? (
-                <div className="text-center py-12">
-                  <motion.div
-                    animate={{ scale: [1, 1.1, 1] }}
-                    transition={{ repeat: Infinity, duration: 2 }}
+            {/* Panel */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed right-0 top-0 h-full w-full max-w-md bg-card border-l border-border shadow-2xl z-50 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <Heart className="w-5 h-5 text-primary fill-primary" />
+                  <h2 className="text-xl font-bold">Favorites</h2>
+                  <motion.span 
+                    key={favorites.length}
+                    initial={{ scale: 1.3 }}
+                    animate={{ scale: 1 }}
+                    className="bg-primary/20 text-primary text-xs px-2 py-1 rounded-full font-medium"
                   >
-                    <Heart className="w-16 h-16 mx-auto text-muted-foreground/30 mb-4" />
-                  </motion.div>
-                  <p className="text-muted-foreground">No favorites yet</p>
-                  <p className="text-sm text-muted-foreground/70 mt-1">
-                    Click the heart icon on generated images to save them
-                  </p>
+                    {favorites.length}
+                  </motion.span>
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {favorites.map((favorite, index) => (
-                    <motion.div
-                      key={favorite.id}
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="relative group rounded-xl overflow-hidden bg-secondary/50"
+                <div className="flex items-center gap-2">
+                  {favorites.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleDownloadAll}
+                      disabled={isDownloadingAll}
+                      className="gap-1"
                     >
-                      <div className="aspect-square">
-                        <img
-                          src={favorite.image_url}
-                          alt="Favorite"
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                        />
-                      </div>
-                      <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center gap-2 p-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => handleDownload(favorite.image_url)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleRemove(favorite.id)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </motion.div>
-                  ))}
+                      {isDownloadingAll ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Package className="w-4 h-4" />
+                      )}
+                      <span className="hidden sm:inline">All</span>
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" onClick={onClose}>
+                    <X className="w-5 h-5" />
+                  </Button>
                 </div>
-              )}
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+              </div>
+
+              <div className="h-[calc(100%-64px)] overflow-y-auto p-4">
+                {loading ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="aspect-square rounded-xl bg-muted animate-skeleton-shimmer bg-gradient-to-r from-muted via-muted/50 to-muted bg-[length:200%_100%]" />
+                    ))}
+                  </div>
+                ) : favorites.length === 0 ? (
+                  <div className="text-center py-12">
+                    <motion.div
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                    >
+                      <Heart className="w-16 h-16 mx-auto text-muted-foreground/30 mb-4" />
+                    </motion.div>
+                    <p className="text-muted-foreground">No favorites yet</p>
+                    <p className="text-sm text-muted-foreground/70 mt-1">
+                      Click the heart icon on generated images to save them
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {favorites.map((favorite, index) => (
+                      <motion.div
+                        key={favorite.id}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="relative group rounded-xl overflow-hidden bg-secondary/50 card-hover-lift"
+                      >
+                        <div className="aspect-square">
+                          <LazyImage
+                            src={favorite.image_url}
+                            alt="Favorite"
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                            containerClassName="w-full h-full"
+                          />
+                        </div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center gap-2 p-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setWatermarkImage(favorite.image_url)}
+                            className="h-8 w-8 p-0"
+                            title="Add Watermark"
+                          >
+                            <Type className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleDownload(favorite.image_url)}
+                            className="h-8 w-8 p-0"
+                            title="Download"
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleRemove(favorite.id)}
+                            className="h-8 w-8 p-0"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 
