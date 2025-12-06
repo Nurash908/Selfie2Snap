@@ -17,6 +17,7 @@ import ImageFilters from "@/components/ImageFilters";
 import BatchDownload from "@/components/BatchDownload";
 import WatermarkEditor from "@/components/WatermarkEditor";
 import ImageUpscaler from "@/components/ImageUpscaler";
+import ImageEnhancer from "@/components/ImageEnhancer";
 import { useSoundEffects } from "@/hooks/useSoundEffects";
 import { useFavorites } from "@/hooks/useFavorites";
 import {
@@ -40,6 +41,7 @@ import {
   ZoomIn,
   ArrowRight,
   Check,
+  Gem,
 } from "lucide-react";
 
 const FRAME_STYLES = [
@@ -68,6 +70,7 @@ const Index = () => {
   const [editingImage, setEditingImage] = useState<string | null>(null);
   const [watermarkImage, setWatermarkImage] = useState<string | null>(null);
   const [upscaleImage, setUpscaleImage] = useState<string | null>(null);
+  const [enhanceImage, setEnhanceImage] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const { playSound } = useSoundEffects();
@@ -279,6 +282,32 @@ const Index = () => {
       {/* Image Upscaler */}
       <AnimatePresence>
         {upscaleImage && (
+          <ImageUpscaler
+            imageUrl={upscaleImage}
+            isOpen={!!upscaleImage}
+            onClose={() => setUpscaleImage(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Image Enhancer */}
+      <AnimatePresence>
+        {enhanceImage && (
+          <ImageEnhancer
+            imageUrl={enhanceImage}
+            isOpen={!!enhanceImage}
+            onClose={() => setEnhanceImage(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <div className="relative z-10 min-h-screen flex flex-col">
+        {/* Header */}
+        <motion.header 
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="glass-ultra border-b border-border/30 sticky top-0 z-30"
+        >
           <ImageUpscaler
             imageUrl={upscaleImage}
             isOpen={!!upscaleImage}

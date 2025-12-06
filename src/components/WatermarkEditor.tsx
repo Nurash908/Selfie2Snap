@@ -20,6 +20,10 @@ import {
   AtSign,
   Sparkles,
   Plus,
+  RotateCw,
+  AlignLeft,
+  Gem,
+  Palette,
 } from "lucide-react";
 
 interface WatermarkEditorProps {
@@ -38,8 +42,19 @@ interface WatermarkPreset {
   fontSize: number;
   opacity: number;
   color: string;
+  fontFamily: string;
+  rotation: number;
   icon: "social" | "copyright" | "brand" | "custom";
 }
+
+const FONT_FAMILIES = [
+  { id: "inter", label: "Inter", value: "Inter, sans-serif" },
+  { id: "playfair", label: "Playfair", value: "Playfair Display, serif" },
+  { id: "roboto", label: "Roboto", value: "Roboto, sans-serif" },
+  { id: "dancing", label: "Script", value: "Dancing Script, cursive" },
+  { id: "oswald", label: "Oswald", value: "Oswald, sans-serif" },
+  { id: "montserrat", label: "Montserrat", value: "Montserrat, sans-serif" },
+];
 
 const DEFAULT_PRESETS: WatermarkPreset[] = [
   {
@@ -50,6 +65,8 @@ const DEFAULT_PRESETS: WatermarkPreset[] = [
     fontSize: 20,
     opacity: 80,
     color: "#ffffff",
+    fontFamily: "Inter, sans-serif",
+    rotation: 0,
     icon: "social",
   },
   {
@@ -60,6 +77,8 @@ const DEFAULT_PRESETS: WatermarkPreset[] = [
     fontSize: 16,
     opacity: 60,
     color: "#ffffff",
+    fontFamily: "Inter, sans-serif",
+    rotation: 0,
     icon: "copyright",
   },
   {
@@ -70,16 +89,20 @@ const DEFAULT_PRESETS: WatermarkPreset[] = [
     fontSize: 24,
     opacity: 70,
     color: "#a855f7",
+    fontFamily: "Montserrat, sans-serif",
+    rotation: 0,
     icon: "brand",
   },
   {
-    id: "minimal",
-    name: "Minimal Signature",
-    text: "•",
-    position: "bottom-right",
-    fontSize: 32,
+    id: "diagonal",
+    name: "Diagonal Signature",
+    text: "Created with ♥",
+    position: "center",
+    fontSize: 28,
     opacity: 40,
     color: "#ffffff",
+    fontFamily: "Dancing Script, cursive",
+    rotation: -15,
     icon: "custom",
   },
 ];
@@ -97,6 +120,7 @@ const COLORS = [
   { id: "black", value: "#000000", label: "Black" },
   { id: "primary", value: "#a855f7", label: "Primary" },
   { id: "accent", value: "#ec4899", label: "Accent" },
+  { id: "gold", value: "#fbbf24", label: "Gold" },
 ];
 
 const getPresetIcon = (icon: string) => {
@@ -119,11 +143,22 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
   const [fontSize, setFontSize] = useState(24);
   const [opacity, setOpacity] = useState(70);
   const [color, setColor] = useState("#ffffff");
+  const [fontFamily, setFontFamily] = useState("Inter, sans-serif");
+  const [rotation, setRotation] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [presets, setPresets] = useState<WatermarkPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newPresetName, setNewPresetName] = useState("");
+  const [activeTab, setActiveTab] = useState<"presets" | "customize">("presets");
+
+  // Load Google Fonts
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.href = "https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&family=Oswald:wght@400;700&family=Montserrat:wght@400;700&family=Playfair+Display:wght@400;700&display=swap";
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+  }, []);
 
   // Load saved presets and preferences
   useEffect(() => {
@@ -145,6 +180,8 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
         setFontSize(prefs.fontSize || 24);
         setOpacity(prefs.opacity || 70);
         setColor(prefs.color || "#ffffff");
+        setFontFamily(prefs.fontFamily || "Inter, sans-serif");
+        setRotation(prefs.rotation || 0);
       } catch (e) {
         console.error("Failed to load watermark preferences");
       }
@@ -155,9 +192,9 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
   const savePreferences = useCallback(() => {
     localStorage.setItem(
       "watermark-preferences",
-      JSON.stringify({ text, position, fontSize, opacity, color })
+      JSON.stringify({ text, position, fontSize, opacity, color, fontFamily, rotation })
     );
-  }, [text, position, fontSize, opacity, color]);
+  }, [text, position, fontSize, opacity, color, fontFamily, rotation]);
 
   // Apply preset
   const applyPreset = (preset: WatermarkPreset) => {
@@ -166,6 +203,8 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
     setFontSize(preset.fontSize);
     setOpacity(preset.opacity);
     setColor(preset.color);
+    setFontFamily(preset.fontFamily || "Inter, sans-serif");
+    setRotation(preset.rotation || 0);
     setSelectedPreset(preset.id);
   };
 
@@ -184,6 +223,8 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
       fontSize,
       opacity,
       color,
+      fontFamily,
+      rotation,
       icon: "custom",
     };
 
@@ -206,7 +247,7 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
     toast.success("Preset deleted");
   };
 
-  // Draw watermark preview
+  // Draw watermark preview with multi-line support
   const drawWatermark = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -222,52 +263,74 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
 
       ctx.drawImage(img, 0, 0);
 
-      ctx.font = `bold ${fontSize}px Inter, sans-serif`;
+      // Split text into lines
+      const lines = text.split("\n");
+      const lineHeight = fontSize * 1.3;
+
+      ctx.font = `bold ${fontSize}px ${fontFamily}`;
       ctx.fillStyle = color;
       ctx.globalAlpha = opacity / 100;
 
-      const padding = 20;
-      const textMetrics = ctx.measureText(text);
-      const textWidth = textMetrics.width;
-      const textHeight = fontSize;
+      const padding = 30;
+      
+      // Calculate total text block dimensions
+      let maxWidth = 0;
+      lines.forEach((line) => {
+        const metrics = ctx.measureText(line);
+        maxWidth = Math.max(maxWidth, metrics.width);
+      });
+      const totalHeight = lineHeight * lines.length;
 
-      let x: number, y: number;
+      let baseX: number, baseY: number;
 
       switch (position) {
         case "top-left":
-          x = padding;
-          y = padding + textHeight;
+          baseX = padding + maxWidth / 2;
+          baseY = padding + fontSize;
           break;
         case "top-right":
-          x = canvas.width - textWidth - padding;
-          y = padding + textHeight;
+          baseX = canvas.width - padding - maxWidth / 2;
+          baseY = padding + fontSize;
           break;
         case "bottom-left":
-          x = padding;
-          y = canvas.height - padding;
+          baseX = padding + maxWidth / 2;
+          baseY = canvas.height - padding - totalHeight + fontSize;
           break;
         case "bottom-right":
-          x = canvas.width - textWidth - padding;
-          y = canvas.height - padding;
+          baseX = canvas.width - padding - maxWidth / 2;
+          baseY = canvas.height - padding - totalHeight + fontSize;
           break;
         case "center":
-          x = (canvas.width - textWidth) / 2;
-          y = canvas.height / 2 + textHeight / 2;
+          baseX = canvas.width / 2;
+          baseY = canvas.height / 2 - totalHeight / 2 + fontSize;
           break;
         default:
-          x = canvas.width - textWidth - padding;
-          y = canvas.height - padding;
+          baseX = canvas.width - padding - maxWidth / 2;
+          baseY = canvas.height - padding - totalHeight + fontSize;
       }
 
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = 4;
+      // Apply rotation
+      ctx.save();
+      ctx.translate(baseX, baseY + totalHeight / 2 - fontSize);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.translate(-baseX, -(baseY + totalHeight / 2 - fontSize));
+
+      // Draw shadow
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = 6;
       ctx.shadowOffsetX = 2;
       ctx.shadowOffsetY = 2;
 
-      ctx.fillText(text, x, y);
+      // Draw each line
+      ctx.textAlign = "center";
+      lines.forEach((line, index) => {
+        ctx.fillText(line, baseX, baseY + index * lineHeight);
+      });
+
+      ctx.restore();
     };
     img.src = imageUrl;
-  }, [imageUrl, text, position, fontSize, opacity, color]);
+  }, [imageUrl, text, position, fontSize, opacity, color, fontFamily, rotation]);
 
   useEffect(() => {
     if (isOpen) {
@@ -302,6 +365,8 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
     setFontSize(24);
     setOpacity(70);
     setColor("#ffffff");
+    setFontFamily("Inter, sans-serif");
+    setRotation(0);
     setSelectedPreset(null);
   };
 
@@ -314,146 +379,54 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/90 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/95 backdrop-blur-xl"
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            className="bg-card border border-border rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden"
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            className="bg-gradient-to-b from-card to-card/95 border border-border/50 rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                  <Type className="w-5 h-5 text-primary-foreground" />
-                </div>
+            {/* Premium Header */}
+            <div className="relative flex items-center justify-between p-5 border-b border-border/50 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">
+              <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-accent/10 opacity-50" />
+              <div className="relative flex items-center gap-3">
+                <motion.div 
+                  className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary via-accent to-primary flex items-center justify-center shadow-lg shadow-primary/25"
+                  animate={{ rotate: [0, 5, -5, 0] }}
+                  transition={{ duration: 4, repeat: Infinity }}
+                >
+                  <Type className="w-6 h-6 text-primary-foreground" />
+                </motion.div>
                 <div>
-                  <h2 className="text-xl font-bold">Watermark Editor</h2>
-                  <p className="text-xs text-muted-foreground">Add custom watermarks to your images</p>
+                  <h2 className="text-xl font-bold">Watermark Studio</h2>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Gem className="w-3 h-3 text-accent" />
+                    Professional watermarking
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={handleReset}>
-                  <RotateCcw className="w-4 h-4 mr-1" />
+              <div className="relative flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={handleReset} className="gap-2 rounded-xl">
+                  <RotateCcw className="w-4 h-4" />
                   Reset
                 </Button>
-                <Button variant="ghost" size="icon" onClick={onClose}>
+                <Button variant="ghost" size="icon" onClick={onClose} className="rounded-xl">
                   <X className="w-5 h-5" />
                 </Button>
               </div>
             </div>
 
-            <div className="grid md:grid-cols-5 gap-4 p-4 max-h-[calc(90vh-140px)] overflow-y-auto">
-              {/* Presets Panel */}
-              <div className="md:col-span-1 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <Bookmark className="w-4 h-4 text-primary" />
-                    Presets
-                  </label>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setShowSaveDialog(true)}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                  {allPresets.map((preset) => (
-                    <motion.div
-                      key={preset.id}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className={`relative p-3 rounded-xl cursor-pointer transition-all group ${
-                        selectedPreset === preset.id
-                          ? "bg-primary/20 border-2 border-primary"
-                          : "bg-secondary/30 border border-border hover:border-primary/50"
-                      }`}
-                      onClick={() => applyPreset(preset)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                            selectedPreset === preset.id
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-secondary text-muted-foreground"
-                          }`}
-                        >
-                          {getPresetIcon(preset.icon)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{preset.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{preset.text}</p>
-                        </div>
-                      </div>
-                      {preset.id.startsWith("custom-") && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deletePreset(preset.id);
-                          }}
-                        >
-                          <Trash2 className="w-3 h-3 text-destructive" />
-                        </Button>
-                      )}
-                    </motion.div>
-                  ))}
-                </div>
-
-                {/* Save Preset Dialog */}
-                <AnimatePresence>
-                  {showSaveDialog && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="p-3 rounded-xl bg-secondary/50 border border-border space-y-2"
-                    >
-                      <Input
-                        value={newPresetName}
-                        onChange={(e) => setNewPresetName(e.target.value)}
-                        placeholder="Preset name..."
-                        className="h-8 text-sm"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="flex-1 h-7"
-                          onClick={() => setShowSaveDialog(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="flex-1 h-7"
-                          onClick={saveCustomPreset}
-                        >
-                          <Save className="w-3 h-3 mr-1" />
-                          Save
-                        </Button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
+            <div className="grid md:grid-cols-2 gap-6 p-6 max-h-[calc(90vh-180px)] overflow-y-auto">
               {/* Preview */}
-              <div className="md:col-span-2 space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <Eye className="w-4 h-4" />
-                  Preview
+                  Live Preview
                 </div>
-                <div className="relative aspect-square rounded-xl overflow-hidden bg-secondary/50 border border-border">
+                <div className="relative aspect-square rounded-2xl overflow-hidden bg-secondary/30 border border-border/50 shadow-xl">
                   <canvas
                     ref={canvasRef}
                     className="w-full h-full object-contain"
@@ -462,151 +435,343 @@ const WatermarkEditor = ({ imageUrl, isOpen, onClose }: WatermarkEditorProps) =>
               </div>
 
               {/* Controls */}
-              <div className="md:col-span-2 space-y-5">
-                {/* Text input */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <Type className="w-4 h-4 text-primary" />
-                    Watermark Text
-                  </label>
-                  <Input
-                    value={text}
-                    onChange={(e) => {
-                      setText(e.target.value);
-                      setSelectedPreset(null);
-                    }}
-                    placeholder="Enter watermark text"
-                    className="bg-secondary/50"
-                  />
+              <div className="space-y-5">
+                {/* Tabs */}
+                <div className="flex gap-1 p-1 rounded-xl bg-secondary/50">
+                  <button
+                    onClick={() => setActiveTab("presets")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                      activeTab === "presets"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Bookmark className="w-4 h-4" />
+                    Presets
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("customize")}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                      activeTab === "customize"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Palette className="w-4 h-4" />
+                    Customize
+                  </button>
                 </div>
 
-                {/* Position */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <Move className="w-4 h-4 text-primary" />
-                    Position
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {POSITIONS.map((pos) => (
-                      <Button
-                        key={pos.id}
-                        variant={position === pos.id ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => {
-                          setPosition(pos.id);
-                          setSelectedPreset(null);
-                        }}
-                        className="text-xs"
-                      >
-                        {pos.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
+                <AnimatePresence mode="wait">
+                  {activeTab === "presets" ? (
+                    <motion.div
+                      key="presets"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 10 }}
+                      className="space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Quick presets</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 rounded-lg"
+                          onClick={() => setShowSaveDialog(true)}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Save Current
+                        </Button>
+                      </div>
 
-                {/* Font size */}
-                <div className="space-y-2">
-                  <label className="flex items-center justify-between text-sm font-medium">
-                    <span className="flex items-center gap-2">
-                      <Type className="w-4 h-4 text-primary" />
-                      Font Size
-                    </span>
-                    <span className="text-muted-foreground">{fontSize}px</span>
-                  </label>
-                  <Slider
-                    value={[fontSize]}
-                    onValueChange={([v]) => {
-                      setFontSize(v);
-                      setSelectedPreset(null);
-                    }}
-                    min={12}
-                    max={72}
-                    step={2}
-                  />
-                </div>
+                      <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                        {allPresets.map((preset) => (
+                          <motion.div
+                            key={preset.id}
+                            whileHover={{ scale: 1.02, y: -2 }}
+                            whileTap={{ scale: 0.98 }}
+                            className={`relative p-3 rounded-xl cursor-pointer transition-all group ${
+                              selectedPreset === preset.id
+                                ? "bg-primary/15 border-2 border-primary shadow-lg shadow-primary/20"
+                                : "bg-secondary/30 border border-border/50 hover:border-primary/50 hover:bg-secondary/50"
+                            }`}
+                            onClick={() => applyPreset(preset)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                                  selectedPreset === preset.id
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-muted-foreground"
+                                }`}
+                              >
+                                {getPresetIcon(preset.icon)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{preset.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">{preset.text}</p>
+                              </div>
+                            </div>
+                            {preset.id.startsWith("custom-") && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deletePreset(preset.id);
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3 text-destructive" />
+                              </Button>
+                            )}
+                          </motion.div>
+                        ))}
+                      </div>
 
-                {/* Opacity */}
-                <div className="space-y-2">
-                  <label className="flex items-center justify-between text-sm font-medium">
-                    <span className="flex items-center gap-2">
-                      <Eye className="w-4 h-4 text-primary" />
-                      Opacity
-                    </span>
-                    <span className="text-muted-foreground">{opacity}%</span>
-                  </label>
-                  <Slider
-                    value={[opacity]}
-                    onValueChange={([v]) => {
-                      setOpacity(v);
-                      setSelectedPreset(null);
-                    }}
-                    min={10}
-                    max={100}
-                    step={5}
-                  />
-                </div>
+                      {/* Save Preset Dialog */}
+                      <AnimatePresence>
+                        {showSaveDialog && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="p-4 rounded-xl bg-secondary/50 border border-border space-y-3"
+                          >
+                            <Input
+                              value={newPresetName}
+                              onChange={(e) => setNewPresetName(e.target.value)}
+                              placeholder="Preset name..."
+                              className="bg-background/50"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="flex-1 rounded-lg"
+                                onClick={() => setShowSaveDialog(false)}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="flex-1 rounded-lg"
+                                onClick={saveCustomPreset}
+                              >
+                                <Save className="w-3.5 h-3.5 mr-1.5" />
+                                Save
+                              </Button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="customize"
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -10 }}
+                      className="space-y-4"
+                    >
+                      {/* Text input - Multi-line */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm font-medium">
+                          <AlignLeft className="w-4 h-4 text-primary" />
+                          Watermark Text
+                          <span className="text-xs text-muted-foreground ml-auto">(Use Enter for new line)</span>
+                        </label>
+                        <textarea
+                          value={text}
+                          onChange={(e) => {
+                            setText(e.target.value);
+                            setSelectedPreset(null);
+                          }}
+                          placeholder="Enter watermark text..."
+                          rows={2}
+                          className="w-full px-3 py-2 rounded-xl bg-secondary/50 border border-border/50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                      </div>
 
-                {/* Color */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <Paintbrush className="w-4 h-4 text-primary" />
-                    Color
-                  </label>
-                  <div className="flex gap-2">
-                    {COLORS.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          setColor(c.value);
-                          setSelectedPreset(null);
-                        }}
-                        className={`w-10 h-10 rounded-full border-2 transition-all ${
-                          color === c.value
-                            ? "border-primary scale-110"
-                            : "border-border hover:border-primary/50"
-                        }`}
-                        style={{ backgroundColor: c.value }}
-                        title={c.label}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      value={color}
-                      onChange={(e) => {
-                        setColor(e.target.value);
-                        setSelectedPreset(null);
-                      }}
-                      className="w-10 h-10 rounded-full cursor-pointer border-2 border-border"
-                    />
-                  </div>
-                </div>
+                      {/* Font Family */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm font-medium">
+                          <Type className="w-4 h-4 text-primary" />
+                          Font Style
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {FONT_FAMILIES.map((font) => (
+                            <button
+                              key={font.id}
+                              onClick={() => {
+                                setFontFamily(font.value);
+                                setSelectedPreset(null);
+                              }}
+                              className={`p-2 rounded-lg text-sm transition-all ${
+                                fontFamily === font.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-secondary/50 hover:bg-secondary"
+                              }`}
+                              style={{ fontFamily: font.value }}
+                            >
+                              {font.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Position */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm font-medium">
+                          <Move className="w-4 h-4 text-primary" />
+                          Position
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {POSITIONS.map((pos) => (
+                            <Button
+                              key={pos.id}
+                              variant={position === pos.id ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => {
+                                setPosition(pos.id);
+                                setSelectedPreset(null);
+                              }}
+                              className="text-xs rounded-lg"
+                            >
+                              {pos.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Font size & Rotation */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="flex items-center justify-between text-sm font-medium">
+                            <span className="flex items-center gap-2">
+                              <Type className="w-4 h-4 text-primary" />
+                              Size
+                            </span>
+                            <span className="text-muted-foreground text-xs">{fontSize}px</span>
+                          </label>
+                          <Slider
+                            value={[fontSize]}
+                            onValueChange={([v]) => {
+                              setFontSize(v);
+                              setSelectedPreset(null);
+                            }}
+                            min={12}
+                            max={72}
+                            step={2}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="flex items-center justify-between text-sm font-medium">
+                            <span className="flex items-center gap-2">
+                              <RotateCw className="w-4 h-4 text-primary" />
+                              Rotation
+                            </span>
+                            <span className="text-muted-foreground text-xs">{rotation}°</span>
+                          </label>
+                          <Slider
+                            value={[rotation]}
+                            onValueChange={([v]) => {
+                              setRotation(v);
+                              setSelectedPreset(null);
+                            }}
+                            min={-45}
+                            max={45}
+                            step={5}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Opacity */}
+                      <div className="space-y-2">
+                        <label className="flex items-center justify-between text-sm font-medium">
+                          <span className="flex items-center gap-2">
+                            <Eye className="w-4 h-4 text-primary" />
+                            Opacity
+                          </span>
+                          <span className="text-muted-foreground text-xs">{opacity}%</span>
+                        </label>
+                        <Slider
+                          value={[opacity]}
+                          onValueChange={([v]) => {
+                            setOpacity(v);
+                            setSelectedPreset(null);
+                          }}
+                          min={10}
+                          max={100}
+                          step={5}
+                        />
+                      </div>
+
+                      {/* Color */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm font-medium">
+                          <Paintbrush className="w-4 h-4 text-primary" />
+                          Color
+                        </label>
+                        <div className="flex gap-2">
+                          {COLORS.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => {
+                                setColor(c.value);
+                                setSelectedPreset(null);
+                              }}
+                              className={`w-9 h-9 rounded-full border-2 transition-all ${
+                                color === c.value
+                                  ? "border-primary scale-110 shadow-lg"
+                                  : "border-border/50 hover:border-primary/50"
+                              }`}
+                              style={{ backgroundColor: c.value }}
+                              title={c.label}
+                            />
+                          ))}
+                          <input
+                            type="color"
+                            value={color}
+                            onChange={(e) => {
+                              setColor(e.target.value);
+                              setSelectedPreset(null);
+                            }}
+                            className="w-9 h-9 rounded-full cursor-pointer border-2 border-border/50"
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="flex items-center justify-between gap-3 p-4 border-t border-border">
+            {/* Premium Footer */}
+            <div className="flex items-center justify-between gap-3 p-5 border-t border-border/50 bg-gradient-to-r from-transparent via-secondary/20 to-transparent">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowSaveDialog(true)}
-                className="gap-2"
+                className="gap-2 rounded-xl"
               >
                 <Save className="w-4 h-4" />
-                Save as Preset
+                Save Preset
               </Button>
               <div className="flex gap-3">
-                <Button variant="outline" onClick={onClose}>
+                <Button variant="outline" onClick={onClose} className="rounded-xl">
                   Cancel
                 </Button>
-                <Button
-                  variant="premium"
-                  onClick={handleDownload}
-                  disabled={isProcessing || !text}
-                  className="gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Download with Watermark
-                </Button>
+                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <Button
+                    onClick={handleDownload}
+                    disabled={isProcessing || !text}
+                    className="gap-2 rounded-xl bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 shadow-lg shadow-primary/25"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </Button>
+                </motion.div>
               </div>
             </div>
           </motion.div>
